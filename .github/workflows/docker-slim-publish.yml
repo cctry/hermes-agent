@@ -6,6 +6,7 @@ name: Docker Slim — Build & Push to GHCR
 #
 # Multi-platform: linux/amd64 + linux/arm64 (for Apple Silicon / Graviton hosts).
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
