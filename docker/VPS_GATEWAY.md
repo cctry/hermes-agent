@@ -5,8 +5,8 @@ gateway for Signal and Telegram, with GitHub and Google Workspace access.
 
 ## What It Includes
 
-- `Dockerfile.gateway-vps`
-  Hermes with `pty`, `mcp`, `cron`, and `messaging`
+- `Dockerfile.slim`
+  Hermes with `pty`, `mcp`, `cron`, `messaging`, and Google Workspace client deps
 - Google client libraries for the bundled `google-workspace` skill
 - `gh`, `git`, and `ripgrep` for GitHub-heavy workflows
 - `Dockerfile.signal-cli`
@@ -14,10 +14,12 @@ gateway for Signal and Telegram, with GitHub and Google Workspace access.
 - `docker-compose.vps.yml`
   Compose v2.4 file that works with older `docker-compose` releases
 
-## Why Not Reuse `Dockerfile.slim`
+## Why Signal Stays Separate
 
-The existing slim image intentionally omits the `messaging` extra, so it
-cannot run Telegram. Signal also requires a separate `signal-cli` daemon.
+The slim image now includes the gateway pieces needed for Telegram and Google
+Workspace. Signal still requires a separate `signal-cli` daemon, and that
+daemon requires Java. Keeping it separate avoids bloating the main Hermes
+image for users who do not need Signal.
 
 ## First-Time Setup
 

@@ -4,10 +4,10 @@ services:
   hermes:
     build:
       context: .
-      dockerfile: Dockerfile.gateway-vps
+      dockerfile: Dockerfile.slim
       args:
         GH_VERSION: "2.67.0"
-    image: hermes-agent:vps-gateway
+    image: hermes-agent:slim
     container_name: hermes
     restart: unless-stopped
     command: ["gateway", "run"]
