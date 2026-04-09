@@ -1,0 +1,179 @@
+# =============================================================================
+# Hermes Agent — Slim Single-Container Docker Image
+# =============================================================================
+#
+# Goal:  Run the full Hermes CLI inside ONE container with NO nested Docker
+#        daemon, NO Playwright/Chromium, NO Node.js, NO WhatsApp bridge.
+#        All shell/CLI commands execute locally inside the container.
+#
+# Build strategy:
+#   Stage 1 "builder" — compiles/installs all Python wheels using uv and
+#   downloads external CLI binaries (gh).  This stage carries build-time
+#   toolchain (gcc, build-essential) that must NOT appear in the final image.
+#
+#   Stage 2 "runtime" — starts from the same slim base, copies only the
+#   compiled artefacts and the application source.  Final image ≈ 250–350 MB.
+#
+# Extras included (kept minimal on purpose):
+#   pty   — pseudo-terminal backend required by the terminal tool on Linux
+#   mcp   — Model Context Protocol client support
+#   cron  — lightweight cron-expression parser (croniter)
+#
+# Extras deliberately OMITTED to stay lean:
+#   messaging (telegram/discord/slack/whatsapp), voice, tts-premium,
+#   modal, daytona, rl, matrix, honcho, acp, mistral, dingtalk, feishu
+#
+# TERMINAL_ENV is forced to "local" so the agent runs commands directly
+# inside this container — no Docker socket, no DinD.
+#
+# Persistent state (config.yaml, .env, skills, memories, sessions) lives
+# under VOLUME /opt/data.  Mount a named volume or host directory there.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: builder
+# Build toolchain + pip/uv installs.  Nothing from here leaks into runtime.
+# -----------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS builder
+
+# Install build-time system packages.
+# gcc / build-essential: compile C extensions (cryptography, psutil, etc.)
+# git:                   pip/uv needs git for any VCS-URL dependencies
+# curl:                  download the gh binary
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        git \
+        curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install uv — Astral's Rust-based pip replacement.
+# Dramatically faster wheel resolution and install than plain pip.
+RUN pip install --no-cache-dir uv
+
+# ── Download GitHub CLI (gh) binary ──────────────────────────────────────────
+# We fetch the pre-built static binary so the runtime image does not need
+# the gh apt repository (saves ~30 MB of apt metadata overhead).
+# ARG allows overriding the version at build time:
+#   docker build --build-arg GH_VERSION=2.70.0 -f Dockerfile.slim .
+ARG GH_VERSION=2.67.0
+# TARGETARCH is injected automatically by buildx ("amd64", "arm64", etc.)
+ARG TARGETARCH=amd64
+RUN ARCH=${TARGETARCH:-amd64} && \
+    curl -fsSL \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
+        | tar xz -C /tmp && \
+    mv /tmp/gh_${GH_VERSION}_linux_${ARCH}/bin/gh /usr/local/bin/gh && \
+    chmod +x /usr/local/bin/gh
+
+# ── Install Python packages ───────────────────────────────────────────────────
+# Copy the full source so uv can resolve the local [project] and its extras.
+# (Splitting "copy metadata" / "copy source" is desirable for cache efficiency
+#  but setuptools requires the full tree to build; keep it simple here.)
+WORKDIR /build
+COPY . .
+
+# Install hermes-agent core + selected extras into the system Python.
+# --no-cache: do not write a uv cache layer (keeps this stage leaner).
+# --system:   install into /usr/local (the system Python), not a venv.
+RUN uv pip install --system --no-cache ".[pty,mcp,cron]"
+
+# Install gsutil (standalone PyPI package — lightweight GCS CLI, ~10 MB).
+# Note: Google's official recommendation is now `gcloud storage`, but the
+# standalone gsutil PyPI package still works for common operations without
+# pulling in the 400 MB+ gcloud SDK.
+RUN uv pip install --system --no-cache gsutil
+
+
+# -----------------------------------------------------------------------------
+# Stage 2: runtime
+# Only the artefacts needed to RUN hermes land here.
+# -----------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm
+
+# ── Minimal runtime system packages ──────────────────────────────────────────
+# curl            — HTTP requests from shell scripts and agent commands
+# git             — the agent frequently runs git commands
+# openssh-client  — ssh / scp for remote-host operations
+# ca-certificates — TLS certificate verification (curl, openssl, pip)
+# procps          — ps / top / kill so the agent can inspect processes
+# less            — pager used by various CLI tools (git, man, etc.)
+# dnsutils        — dig / nslookup for network diagnostics
+#
+# NOT installed (intentionally omitted):
+#   nodejs / npm, ffmpeg, ripgrep, chromium, playwright-deps
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        git \
+        openssh-client \
+        ca-certificates \
+        procps \
+        less \
+        dnsutils && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# ── Copy Python packages from the builder stage ───────────────────────────────
+# Everything installed by uv lives under /usr/local/lib/python3.12/.
+# Copying the entire tree brings in site-packages, dist-info metadata, etc.
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+
+# ── Copy console-script entry points ─────────────────────────────────────────
+# pyproject.toml defines:
+#   hermes        → hermes_cli.main:main
+#   hermes-agent  → run_agent:main
+#   hermes-acp    → acp_adapter.entry:main
+# The glob "hermes*" copies all three (and any future additions).
+COPY --from=builder /usr/local/bin/hermes* /usr/local/bin/
+
+# ── Copy external CLI binaries ────────────────────────────────────────────────
+# GitHub CLI — for repo management, PR automation, etc.
+COPY --from=builder /usr/local/bin/gh /usr/local/bin/gh
+# gsutil console-script wrapper (Python shebang script, ~1 KB)
+COPY --from=builder /usr/local/bin/gsutil /usr/local/bin/gsutil
+
+# ── Copy application source ───────────────────────────────────────────────────
+# Required by the entrypoint script for:
+#   • Config bootstrap  (cli-config.yaml.example → /opt/data/config.yaml)
+#   • .env bootstrap    (.env.example → /opt/data/.env)
+#   • SOUL.md           (docker/SOUL.md → /opt/data/SOUL.md)
+#   • Skills sync       (tools/skills_sync.py, skills/)
+COPY . /opt/hermes
+WORKDIR /opt/hermes
+
+# ── Runtime environment ───────────────────────────────────────────────────────
+# HERMES_HOME: all user data (config, API keys, memories, sessions) goes here.
+#              Must be a mounted volume for persistence across restarts.
+ENV HERMES_HOME=/opt/data
+
+# TERMINAL_ENV=local: the agent executes shell commands directly inside this
+# container.  This is the correct setting when running Hermes as the sole
+# process in a container — no nested Docker daemon required.
+ENV TERMINAL_ENV=local
+
+# Keep Python output unbuffered so logs appear in real time in `docker logs`.
+ENV PYTHONUNBUFFERED=1
+
+# ── Volume ────────────────────────────────────────────────────────────────────
+# /opt/data holds everything that must survive container restarts:
+#   config.yaml, .env (API keys), skills/, memories/, sessions/, logs/, cron/
+# ALWAYS mount a named volume or host directory here.
+VOLUME ["/opt/data"]
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+# entrypoint.sh:
+#   1. Creates the /opt/data directory structure on first run
+#   2. Copies example config.yaml and .env if not present
+#   3. Copies docker/SOUL.md if not present
+#   4. Runs tools/skills_sync.py to sync bundled skills (preserves user edits)
+#   5. exec hermes "$@"
+RUN chmod +x /opt/hermes/docker/entrypoint.sh
+ENTRYPOINT ["/opt/hermes/docker/entrypoint.sh"]
+
+# Default: interactive CLI mode.
+# Override in docker-compose `command:` for other modes, e.g.:
+#   command: ["gateway", "telegram"]
+#   command: ["gateway", "slack"]
+CMD []
