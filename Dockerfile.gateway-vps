@@ -1,0 +1,85 @@
+# =============================================================================
+# Hermes Agent — VPS gateway image
+# =============================================================================
+#
+# Purpose:
+#   A leaner deployment target for always-on VPS use where Hermes runs as a
+#   messaging gateway with GitHub and Google Workspace access.
+#
+# Included:
+#   - pty: terminal tool support
+#   - mcp: external tool servers
+#   - cron: scheduled jobs
+#   - messaging: Telegram / Slack / Discord adapters
+#   - Google API client deps for the bundled google-workspace skill
+#   - gh + git + ripgrep for GitHub-heavy workflows
+#
+# Deliberately omitted:
+#   - Playwright / Chromium
+#   - Node.js / WhatsApp bridge
+#   - local voice / TTS premium extras
+#   - RL / Modal / Daytona / other heavyweight extras
+# =============================================================================
+
+FROM python:3.12-slim-bookworm AS builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        git \
+        curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+ARG GH_VERSION=2.67.0
+ARG TARGETARCH=amd64
+RUN ARCH=${TARGETARCH:-amd64} && \
+    curl -fsSL \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
+        | tar xz -C /tmp && \
+    mv /tmp/gh_${GH_VERSION}_linux_${ARCH}/bin/gh /usr/local/bin/gh && \
+    chmod +x /usr/local/bin/gh
+
+WORKDIR /build
+COPY . .
+
+RUN uv pip install --system --no-cache ".[pty,mcp,cron,messaging]" && \
+    uv pip install --system --no-cache \
+        google-api-python-client \
+        google-auth-oauthlib \
+        google-auth-httplib2
+
+
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        dnsutils \
+        git \
+        less \
+        openssh-client \
+        procps \
+        ripgrep && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder /usr/local/bin/hermes* /usr/local/bin/
+COPY --from=builder /usr/local/bin/gh /usr/local/bin/gh
+
+COPY . /opt/hermes
+WORKDIR /opt/hermes
+
+ENV HERMES_HOME=/opt/data
+ENV TERMINAL_ENV=local
+ENV PYTHONUNBUFFERED=1
+
+VOLUME ["/opt/data"]
+
+RUN chmod +x /opt/hermes/docker/entrypoint.sh
+ENTRYPOINT ["/opt/hermes/docker/entrypoint.sh"]
+CMD ["gateway", "run"]

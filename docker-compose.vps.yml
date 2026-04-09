@@ -1,0 +1,86 @@
+version: "2.4"
+
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway-vps
+      args:
+        GH_VERSION: "2.67.0"
+    image: hermes-agent:vps-gateway
+    container_name: hermes
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    depends_on:
+      - signal-cli
+    volumes:
+      - ./data:/opt/data
+    environment:
+      HERMES_HOME: /opt/data
+      TERMINAL_ENV: local
+      PYTHONUNBUFFERED: "1"
+      HERMES_INFERENCE_PROVIDER: "${HERMES_INFERENCE_PROVIDER:-copilot}"
+      HERMES_MODEL: "${HERMES_MODEL:-gpt-5.4}"
+
+      # Provider auth
+      COPILOT_GITHUB_TOKEN: "${COPILOT_GITHUB_TOKEN}"
+      GH_TOKEN: "${GH_TOKEN}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+
+      # Telegram
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_ALLOWED_USERS: "${TELEGRAM_ALLOWED_USERS}"
+      TELEGRAM_HOME_CHANNEL: "${TELEGRAM_HOME_CHANNEL}"
+
+      # Signal via the sidecar daemon
+      SIGNAL_HTTP_URL: "http://signal-cli:8080"
+      SIGNAL_ACCOUNT: "${SIGNAL_ACCOUNT}"
+      SIGNAL_ALLOWED_USERS: "${SIGNAL_ALLOWED_USERS}"
+      SIGNAL_GROUP_ALLOWED_USERS: "${SIGNAL_GROUP_ALLOWED_USERS}"
+      SIGNAL_HOME_CHANNEL: "${SIGNAL_HOME_CHANNEL}"
+
+      # Optional tool keys
+      EXA_API_KEY: "${EXA_API_KEY}"
+      FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
+      PARALLEL_API_KEY: "${PARALLEL_API_KEY}"
+      FAL_KEY: "${FAL_KEY}"
+
+      # Terminal limits
+      TERMINAL_TIMEOUT: "120"
+      TERMINAL_LIFETIME_SECONDS: "600"
+    mem_limit: 384m
+    mem_reservation: 192m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  signal-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.signal-cli
+      args:
+        SIGNAL_CLI_VERSION: "0.13.20"
+    image: hermes-signal-cli:local
+    container_name: hermes-signal-cli
+    restart: unless-stopped
+    environment:
+      SIGNAL_CLI_ACCOUNT: "${SIGNAL_ACCOUNT}"
+    command: ["daemon", "--http", "0.0.0.0:8080"]
+    volumes:
+      - ./signal-data:/root/.local/share/signal-cli
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/check"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 256m
+    mem_reservation: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
