@@ -16,10 +16,12 @@ services:
       - ./data:/opt/data
     environment:
       HERMES_HOME: /opt/data
+      GH_CONFIG_DIR: /opt/data/gh
+      GIT_CONFIG_GLOBAL: /opt/data/gitconfig
       TERMINAL_ENV: local
       PYTHONUNBUFFERED: "1"
       HERMES_INFERENCE_PROVIDER: "${HERMES_INFERENCE_PROVIDER:-copilot}"
-      HERMES_MODEL: "${HERMES_MODEL:-gpt-5.4}"
+      HERMES_MODEL: "${HERMES_MODEL:-gpt-5.4-mini}"
 
       # Provider auth
       COPILOT_GITHUB_TOKEN: "${COPILOT_GITHUB_TOKEN}"

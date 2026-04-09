@@ -12,7 +12,7 @@ gateway for Signal and Telegram, with GitHub and Google Workspace access.
 - `Dockerfile.signal-cli`
   A separate Signal daemon sidecar
 - `docker-compose.vps.yml`
-  Base Compose v2.4 file for Hermes itself
+  Base Compose v2.1 file for Hermes itself
 - `docker-compose.signal.yml`
   Optional Signal overlay for older `docker-compose` releases
 
@@ -37,7 +37,7 @@ Copilot example:
 
 ```bash
 HERMES_INFERENCE_PROVIDER=copilot
-HERMES_MODEL=gpt-5.4
+HERMES_MODEL=gpt-5.4-mini
 GH_TOKEN=gho_xxx
 ```
 
@@ -79,6 +79,7 @@ docker-compose -f docker-compose.vps.yml -f docker-compose.signal.yml up -d --bu
 ## Notes
 
 - Hermes stores all runtime state in `./data`.
+- GitHub CLI auth persists in `./data/gh`, and git config can persist in `./data/gitconfig`.
 - Signal session state is stored in `./signal-data`.
 - `SIGNAL_HTTP_URL` is only wired automatically when you include `docker-compose.signal.yml`.
 - The compose file uses `mem_limit` because old `docker-compose` versions do
