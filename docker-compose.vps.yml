@@ -1,0 +1,60 @@
+version: "2.1"
+
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile.slim
+      args:
+        GH_VERSION: "2.67.0"
+        TARGETARCH: "${TARGETARCH}"
+    image: hermes-agent:slim
+    container_name: hermes
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    volumes:
+      - ./data:/opt/data
+    environment:
+      HERMES_HOME: /opt/data
+      GH_CONFIG_DIR: /opt/data/gh
+      GIT_CONFIG_GLOBAL: /opt/data/gitconfig
+      TERMINAL_ENV: local
+      PYTHONUNBUFFERED: "1"
+      HERMES_INFERENCE_PROVIDER: "${HERMES_INFERENCE_PROVIDER:-copilot}"
+      HERMES_MODEL: "${HERMES_MODEL:-gpt-5.4-mini}"
+
+      # Provider auth
+      COPILOT_GITHUB_TOKEN: "${COPILOT_GITHUB_TOKEN}"
+      GH_TOKEN: "${GH_TOKEN}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+
+      # Telegram
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_ALLOWED_USERS: "${TELEGRAM_ALLOWED_USERS}"
+      TELEGRAM_HOME_CHANNEL: "${TELEGRAM_HOME_CHANNEL}"
+
+      # Signal is optional; set these only when you run the Signal overlay.
+      SIGNAL_HTTP_URL: "${SIGNAL_HTTP_URL}"
+      SIGNAL_ACCOUNT: "${SIGNAL_ACCOUNT}"
+      SIGNAL_ALLOWED_USERS: "${SIGNAL_ALLOWED_USERS}"
+      SIGNAL_GROUP_ALLOWED_USERS: "${SIGNAL_GROUP_ALLOWED_USERS}"
+      SIGNAL_HOME_CHANNEL: "${SIGNAL_HOME_CHANNEL}"
+
+      # Optional tool keys
+      EXA_API_KEY: "${EXA_API_KEY}"
+      FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
+      PARALLEL_API_KEY: "${PARALLEL_API_KEY}"
+      FAL_KEY: "${FAL_KEY}"
+
+      # Terminal limits
+      TERMINAL_TIMEOUT: "120"
+      TERMINAL_LIFETIME_SECONDS: "600"
+    mem_limit: 384m
+    mem_reservation: 192m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

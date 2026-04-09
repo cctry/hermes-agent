@@ -2,8 +2,8 @@
 # Hermes Agent — Slim Single-Container Docker Image
 # =============================================================================
 #
-# Goal:  Run the full Hermes CLI inside ONE container with NO nested Docker
-#        daemon, NO Playwright/Chromium, NO Node.js, NO WhatsApp bridge.
+# Goal:  Run Hermes inside ONE container with NO nested Docker daemon,
+#        NO Playwright/Chromium, NO Node.js, NO WhatsApp bridge.
 #        All shell/CLI commands execute locally inside the container.
 #
 # Build strategy:
@@ -12,16 +12,18 @@
 #   toolchain (gcc, build-essential) that must NOT appear in the final image.
 #
 #   Stage 2 "runtime" — starts from the same slim base, copies only the
-#   compiled artefacts and the application source.  Final image ≈ 250–350 MB.
+#   compiled artefacts and the application source.
 #
 # Extras included (kept minimal on purpose):
-#   pty   — pseudo-terminal backend required by the terminal tool on Linux
-#   mcp   — Model Context Protocol client support
-#   cron  — lightweight cron-expression parser (croniter)
+#   pty         — pseudo-terminal backend required by the terminal tool on Linux
+#   mcp         — Model Context Protocol client support
+#   cron        — lightweight cron-expression parser (croniter)
+#   messaging   — Telegram / Slack / Discord gateway support
+#   google-api  — Google Workspace skill dependencies for Calendar / Docs / Sheets
 #
 # Extras deliberately OMITTED to stay lean:
-#   messaging (telegram/discord/slack/whatsapp), voice, tts-premium,
-#   modal, daytona, rl, matrix, honcho, acp, mistral, dingtalk, feishu
+#   Node.js / WhatsApp bridge, voice, tts-premium, modal, daytona, rl,
+#   matrix, honcho, acp, mistral, dingtalk, feishu
 #
 # TERMINAL_ENV is forced to "local" so the agent runs commands directly
 # inside this container — no Docker socket, no DinD.
@@ -59,8 +61,15 @@ RUN pip install --no-cache-dir uv
 #   docker build --build-arg GH_VERSION=2.70.0 -f Dockerfile.slim .
 ARG GH_VERSION=2.67.0
 # TARGETARCH is injected automatically by buildx ("amd64", "arm64", etc.)
-ARG TARGETARCH=amd64
-RUN ARCH=${TARGETARCH:-amd64} && \
+ARG TARGETARCH
+RUN ARCH="${TARGETARCH:-}" && \
+    if [ -z "$ARCH" ]; then \
+      case "$(uname -m)" in \
+        x86_64|amd64) ARCH=amd64 ;; \
+        aarch64|arm64) ARCH=arm64 ;; \
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+      esac; \
+    fi && \
     curl -fsSL \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
         | tar xz -C /tmp && \
@@ -77,7 +86,11 @@ COPY . .
 # Install hermes-agent core + selected extras into the system Python.
 # --no-cache: do not write a uv cache layer (keeps this stage leaner).
 # --system:   install into /usr/local (the system Python), not a venv.
-RUN uv pip install --system --no-cache ".[pty,mcp,cron]"
+RUN uv pip install --system --no-cache ".[pty,mcp,cron,messaging]" && \
+    uv pip install --system --no-cache \
+        google-api-python-client \
+        google-auth-oauthlib \
+        google-auth-httplib2
 
 # Install gsutil (standalone PyPI package — lightweight GCS CLI, ~10 MB).
 # Note: Google's official recommendation is now `gcloud storage`, but the
@@ -100,9 +113,10 @@ FROM python:3.12-slim-bookworm
 # procps          — ps / top / kill so the agent can inspect processes
 # less            — pager used by various CLI tools (git, man, etc.)
 # dnsutils        — dig / nslookup for network diagnostics
+# ripgrep         — faster repo/file search for GitHub-heavy workflows
 #
 # NOT installed (intentionally omitted):
-#   nodejs / npm, ffmpeg, ripgrep, chromium, playwright-deps
+#   nodejs / npm, ffmpeg, chromium, playwright-deps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
@@ -111,7 +125,8 @@ RUN apt-get update && \
         ca-certificates \
         procps \
         less \
-        dnsutils && \
+        dnsutils \
+        ripgrep && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
@@ -173,7 +188,7 @@ RUN chmod +x /opt/hermes/docker/entrypoint.sh
 ENTRYPOINT ["/opt/hermes/docker/entrypoint.sh"]
 
 # Default: interactive CLI mode.
-# Override in docker-compose `command:` for other modes, e.g.:
-#   command: ["gateway", "telegram"]
+# Override in docker-compose `command:` for gateway mode, e.g.:
+#   command: ["gateway", "run"]
 #   command: ["gateway", "slack"]
 CMD []
