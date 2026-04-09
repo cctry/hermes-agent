@@ -92,7 +92,7 @@ jobs:
             echo "| Layers | ${{ steps.size.outputs.layers }} |"
             echo "| Commit | \`${{ github.sha }}\` |"
             echo ""
-            echo "> Target: uncompressed < 400 MB (ideal 200–350 MB)"
+            echo "> Target: uncompressed < 400 MB (ideal 200-350 MB)"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # ── 7. Post PR comment ────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ jobs:
               `| Layers | ${layers} |`,
               `| Commit | \`${sha}\` |`,
               '',
-              `> Target: uncompressed < 400 MB (ideal 200–350 MB). [Full run ↗](${runUrl})`,
+              `> Target: uncompressed < 400 MB (ideal 200-350 MB). [Full run ↗](${runUrl})`,
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({

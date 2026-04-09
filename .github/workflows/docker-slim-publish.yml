@@ -108,7 +108,7 @@ jobs:
           echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Tags:**" >> "$GITHUB_STEP_SUMMARY"
-          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n' | while read -r tag; do
+          echo '${{ steps.meta.outputs.tags }}' | while read -r tag; do
             echo "- \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
           done
           echo "" >> "$GITHUB_STEP_SUMMARY"
