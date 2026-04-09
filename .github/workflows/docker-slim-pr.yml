@@ -1,0 +1,152 @@
+name: Docker Slim — PR Build & Size Check
+
+# Trigger on every pull request so contributors always get image-size feedback
+# before merging.  No path filter: any change could affect the final image
+# size, and a fast build cache makes repeated runs cheap.
+on:
+  pull_request:
+
+concurrency:
+  # One build per PR at a time; cancel the previous run when a new commit arrives.
+  group: docker-slim-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write  # required to post the size-report comment
+
+jobs:
+  build-and-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40   # multi-layer Python wheel builds can be slow on first run
+
+    steps:
+      # ── 1. Source ────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Builder ───────────────────────────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 3. Build (load into local daemon for inspection) ─────────────────────
+      # We use the GHA cache so subsequent PR pushes only rebuild changed layers.
+      # `load: true` exports the image to the local Docker daemon so we can
+      # run a smoke test and measure size without pushing anywhere.
+      - name: Build slim image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.slim
+          load: true
+          tags: hermes-agent:slim-pr-${{ github.sha }}
+          cache-from: type=gha,scope=slim
+          cache-to: type=gha,mode=max,scope=slim
+
+      # ── 4. Smoke test ─────────────────────────────────────────────────────────
+      # Verify the entry point executes without error.
+      # `hermes --help` exits 0 when the package is correctly installed.
+      - name: Smoke test — hermes --help
+        run: |
+          docker run --rm \
+            -e HERMES_HOME=/tmp/hermes-test \
+            -e TERMINAL_ENV=local \
+            --entrypoint hermes \
+            hermes-agent:slim-pr-${{ github.sha }} \
+            --help
+
+      # ── 5. Measure image size ─────────────────────────────────────────────────
+      # Collect both the uncompressed "disk" size and the compressed transfer size.
+      - name: Measure image size
+        id: size
+        run: |
+          IMAGE="hermes-agent:slim-pr-${{ github.sha }}"
+
+          # Uncompressed size (what `docker images` shows — layers on disk)
+          RAW_BYTES=$(docker image inspect "$IMAGE" --format='{{.Size}}')
+          RAW_MB=$(echo "scale=1; $RAW_BYTES / 1048576" | bc)
+
+          # Compressed transfer size (what you'd pay to pull from a registry)
+          COMPRESSED_BYTES=$(docker save "$IMAGE" | gzip -9 | wc -c)
+          COMPRESSED_MB=$(echo "scale=1; $COMPRESSED_BYTES / 1048576" | bc)
+
+          # Number of layers
+          LAYERS=$(docker image inspect "$IMAGE" --format='{{len .RootFS.Layers}}')
+
+          echo "raw_mb=$RAW_MB"             >> "$GITHUB_OUTPUT"
+          echo "compressed_mb=$COMPRESSED_MB" >> "$GITHUB_OUTPUT"
+          echo "layers=$LAYERS"             >> "$GITHUB_OUTPUT"
+
+      # ── 6. Write Job Summary ──────────────────────────────────────────────────
+      # This always appears in the Actions run, even for fork PRs where the
+      # GITHUB_TOKEN cannot write PR comments.
+      - name: Write Job Summary
+        run: |
+          {
+            echo "## 🐳 Slim Docker Image Size Report"
+            echo ""
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Uncompressed (disk) | **${{ steps.size.outputs.raw_mb }} MB** |"
+            echo "| Compressed (transfer) | **${{ steps.size.outputs.compressed_mb }} MB** |"
+            echo "| Layers | ${{ steps.size.outputs.layers }} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo ""
+            echo "> Target: uncompressed < 400 MB (ideal 200–350 MB)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 7. Post PR comment ────────────────────────────────────────────────────
+      # Creates a new comment on the first push and updates the same comment on
+      # subsequent pushes to the same PR (avoids comment spam).
+      - name: Post size report as PR comment
+        uses: actions/github-script@v7
+        # Skip on fork PRs where the token lacks pull-request write permission.
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          script: |
+            const rawMb       = '${{ steps.size.outputs.raw_mb }}';
+            const compMb      = '${{ steps.size.outputs.compressed_mb }}';
+            const layers      = '${{ steps.size.outputs.layers }}';
+            const sha         = context.sha.slice(0, 7);
+            const runUrl      = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const marker = '<!-- docker-slim-size-report -->';
+            const body = [
+              marker,
+              '## 🐳 Slim Docker Image — Size Report',
+              '',
+              '| Metric | Value |',
+              '| --- | --- |',
+              `| Uncompressed (disk) | **${rawMb} MB** |`,
+              `| Compressed (transfer) | **${compMb} MB** |`,
+              `| Layers | ${layers} |`,
+              `| Commit | \`${sha}\` |`,
+              '',
+              `> Target: uncompressed < 400 MB (ideal 200–350 MB). [Full run ↗](${runUrl})`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' && c.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
