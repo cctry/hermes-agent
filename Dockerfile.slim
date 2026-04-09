@@ -61,8 +61,15 @@ RUN pip install --no-cache-dir uv
 #   docker build --build-arg GH_VERSION=2.70.0 -f Dockerfile.slim .
 ARG GH_VERSION=2.67.0
 # TARGETARCH is injected automatically by buildx ("amd64", "arm64", etc.)
-ARG TARGETARCH=amd64
-RUN ARCH=${TARGETARCH:-amd64} && \
+ARG TARGETARCH
+RUN ARCH="${TARGETARCH:-}" && \
+    if [ -z "$ARCH" ]; then \
+      case "$(uname -m)" in \
+        x86_64|amd64) ARCH=amd64 ;; \
+        aarch64|arm64) ARCH=arm64 ;; \
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+      esac; \
+    fi && \
     curl -fsSL \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
         | tar xz -C /tmp && \

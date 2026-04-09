@@ -7,12 +7,11 @@ services:
       dockerfile: Dockerfile.slim
       args:
         GH_VERSION: "2.67.0"
+        TARGETARCH: "${TARGETARCH}"
     image: hermes-agent:slim
     container_name: hermes
     restart: unless-stopped
     command: ["gateway", "run"]
-    depends_on:
-      - signal-cli
     volumes:
       - ./data:/opt/data
     environment:
@@ -34,8 +33,8 @@ services:
       TELEGRAM_ALLOWED_USERS: "${TELEGRAM_ALLOWED_USERS}"
       TELEGRAM_HOME_CHANNEL: "${TELEGRAM_HOME_CHANNEL}"
 
-      # Signal via the sidecar daemon
-      SIGNAL_HTTP_URL: "http://signal-cli:8080"
+      # Signal is optional; set these only when you run the Signal overlay.
+      SIGNAL_HTTP_URL: "${SIGNAL_HTTP_URL}"
       SIGNAL_ACCOUNT: "${SIGNAL_ACCOUNT}"
       SIGNAL_ALLOWED_USERS: "${SIGNAL_ALLOWED_USERS}"
       SIGNAL_GROUP_ALLOWED_USERS: "${SIGNAL_GROUP_ALLOWED_USERS}"
@@ -57,30 +56,3 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-
-  signal-cli:
-    build:
-      context: .
-      dockerfile: Dockerfile.signal-cli
-      args:
-        SIGNAL_CLI_VERSION: "0.13.20"
-    image: hermes-signal-cli:local
-    container_name: hermes-signal-cli
-    restart: unless-stopped
-    environment:
-      SIGNAL_CLI_ACCOUNT: "${SIGNAL_ACCOUNT}"
-    command: ["daemon", "--http", "0.0.0.0:8080"]
-    volumes:
-      - ./signal-data:/root/.local/share/signal-cli
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/check"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    mem_limit: 256m
-    mem_reservation: 128m
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "3"

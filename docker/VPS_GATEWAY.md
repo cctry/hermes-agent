@@ -12,14 +12,16 @@ gateway for Signal and Telegram, with GitHub and Google Workspace access.
 - `Dockerfile.signal-cli`
   A separate Signal daemon sidecar
 - `docker-compose.vps.yml`
-  Compose v2.4 file that works with older `docker-compose` releases
+  Base Compose v2.4 file for Hermes itself
+- `docker-compose.signal.yml`
+  Optional Signal overlay for older `docker-compose` releases
 
 ## Why Signal Stays Separate
 
 The slim image now includes the gateway pieces needed for Telegram and Google
 Workspace. Signal still requires a separate `signal-cli` daemon, and that
 daemon requires Java. Keeping it separate avoids bloating the main Hermes
-image for users who do not need Signal.
+image and lets Telegram-only deployments run without a dormant Signal service.
 
 ## First-Time Setup
 
@@ -54,24 +56,30 @@ docker-compose -f docker-compose.vps.yml run --rm hermes model
 
 The resulting auth state is stored under `./data`.
 
-3. If using Signal, link the sidecar once:
+3. Start Hermes for Telegram-first usage:
 
 ```bash
-docker-compose -f docker-compose.vps.yml run --rm signal-cli link -n HermesAgent
+docker-compose -f docker-compose.vps.yml up -d --build
+```
+
+4. If you later want Signal, link the sidecar once:
+
+```bash
+docker-compose -f docker-compose.vps.yml -f docker-compose.signal.yml run --rm signal-cli link -n HermesAgent
 ```
 
 Then set `SIGNAL_ACCOUNT=+15551234567` in `.env`.
 
-4. Start the stack:
+5. Start Hermes with the Signal overlay:
 
 ```bash
-docker-compose -f docker-compose.vps.yml up -d --build
+docker-compose -f docker-compose.vps.yml -f docker-compose.signal.yml up -d --build
 ```
 
 ## Notes
 
 - Hermes stores all runtime state in `./data`.
 - Signal session state is stored in `./signal-data`.
-- `SIGNAL_HTTP_URL` is wired to the sidecar automatically.
+- `SIGNAL_HTTP_URL` is only wired automatically when you include `docker-compose.signal.yml`.
 - The compose file uses `mem_limit` because old `docker-compose` versions do
   not support the newer `deploy.resources` syntax reliably.
