@@ -23,14 +23,14 @@ jobs:
   sync-upstream:
     runs-on: ubuntu-latest
     env:
-      SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN != '' && secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+      SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
     steps:
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.target_branch || 'my' }}
           fetch-depth: 0
-          token: ${{ secrets.UPSTREAM_SYNC_TOKEN != '' && secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
 
       - name: Configure git
         run: |
@@ -55,7 +55,7 @@ jobs:
           exit 1
 
       - name: Check whether target already contains upstream
-        id: contains
+        id: upstream_check
         run: |
           TARGET="${{ inputs.target_branch || 'my' }}"
           UPSTREAM_REF="upstream/${{ inputs.upstream_branch || 'main' }}"
@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Create sync branch and merge upstream
-        if: steps.contains.outputs.needs_pr == 'true'
+        if: steps.upstream_check.outputs.needs_pr == 'true'
         id: branch
         run: |
           TARGET="${{ inputs.target_branch || 'my' }}"
@@ -77,9 +77,9 @@ jobs:
           echo "name=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Open sync PR
-        if: steps.contains.outputs.needs_pr == 'true'
+        if: steps.upstream_check.outputs.needs_pr == 'true'
         env:
-          GH_TOKEN: ${{ env.SYNC_TOKEN }}
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
         run: |
           TARGET="${{ inputs.target_branch || 'my' }}"
           UPSTREAM_BRANCH="${{ inputs.upstream_branch || 'main' }}"
@@ -94,6 +94,6 @@ jobs:
           fi
 
       - name: No-op summary
-        if: steps.contains.outputs.needs_pr != 'true'
+        if: steps.upstream_check.outputs.needs_pr != 'true'
         run: |
           echo "Target branch already contains upstream/${{ inputs.upstream_branch || 'main' }}. No sync PR created."
