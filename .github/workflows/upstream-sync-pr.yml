@@ -23,11 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+      UPSTREAM: ${{ inputs.upstream_branch || 'main' }}
+      TARGET: ${{ inputs.target_branch || 'my' }}
     steps:
-      - name: Checkout target branch
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target_branch || 'my' }}
           fetch-depth: 0
           token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
 
@@ -35,54 +36,50 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-      - name: Add upstream remote
+      - name: Add upstream remote and fetch
         run: |
-          git remote add upstream https://github.com/NousResearch/hermes-agent.git
-          git fetch upstream "${{ inputs.upstream_branch || 'main' }}"
+          git remote add upstream https://github.com/NousResearch/hermes-agent.git || true
+          git fetch upstream "${{ env.UPSTREAM }}"
 
-      - name: Mirror upstream branch into fork main
+      - name: Create sync branch from upstream
+        id: make_branch
         run: |
-          git push origin "refs/remotes/upstream/${{ inputs.upstream_branch || 'main' }}:refs/heads/main" --force
+          SYNC_BRANCH="sync/upstream-${{ env.UPSTREAM }}-$(date -u +%Y%m%d-%H%M%S)"
+          git checkout -b "$SYNC_BRANCH" "upstream/${{ env.UPSTREAM }}"
 
-      - name: Explain missing sync token
-        if: failure()
-        run: |
-          echo "Mirroring upstream into fork main can fail with the default GITHUB_TOKEN when upstream changes include workflow files."
-          echo "Add repository secret UPSTREAM_SYNC_TOKEN with a PAT that has repo + workflow access, then rerun this workflow."
-          exit 1
-
-      - name: Check whether target already contains upstream
-        id: upstream_check
-        run: |
-          TARGET="${{ inputs.target_branch || 'my' }}"
-          UPSTREAM_REF="upstream/${{ inputs.upstream_branch || 'main' }}"
-          if git merge-base --is-ancestor "$UPSTREAM_REF" "origin/$TARGET"; then
-            echo "needs_pr=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "needs_pr=true" >> "$GITHUB_OUTPUT"
+          # If no PAT is provided, avoid including upstream workflow changes by
+          # restoring .github/workflows from the current origin/main before pushing.
+          if [ -z "${{ secrets.UPSTREAM_SYNC_TOKEN }}" ]; then
+            git fetch origin main || true
+            git checkout origin/main -- .github/workflows || true
+            if ! git diff --quiet -- .github/workflows; then
+              git add .github/workflows
+              git commit -m "Restore local workflow files (exclude upstream workflow changes)" || true
+            fi
           fi
 
-      - name: Create PR from main into target
-        if: steps.upstream_check.outputs.needs_pr == 'true'
+          git push origin "$SYNC_BRANCH"
+          echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR from sync branch into target
+        if: steps.make_branch.outputs.sync_branch != ''
         env:
           GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
         run: |
-          TARGET="${{ inputs.target_branch || 'my' }}"
-          UPSTREAM_BRANCH="${{ inputs.upstream_branch || 'main' }}"
-          EXISTING_PR_COUNT="$(gh pr list --base "$TARGET" --head "main" --json number --jq 'length')"
+          SYNC_BRANCH="${{ steps.make_branch.outputs.sync_branch }}"
+          EXISTING_PR_COUNT=$(gh pr list --base "${{ env.TARGET }}" --head "$SYNC_BRANCH" --json number --jq 'length')
           if [ "$EXISTING_PR_COUNT" -eq 0 ]; then
             gh pr create \
-              --base "$TARGET" \
-              --head "main" \
-              --title "Sync upstream/$UPSTREAM_BRANCH into $TARGET" \
-              --body "Automated upstream sync.\n\nThis PR contains the mirrored upstream changes on the fork's main branch and is created for manual review/merge into $TARGET."
+              --base "${{ env.TARGET }}" \
+              --head "$SYNC_BRANCH" \
+              --title "Sync upstream/${{ env.UPSTREAM }} into ${{ env.TARGET }}" \
+              --body "Automated upstream sync: this PR contains upstream/${{ env.UPSTREAM }} changes (workflows excluded when PAT not provided) to be merged into ${{ env.TARGET }}."
           else
-            echo "Existing PR from main -> $TARGET found, skipping creation."
+            echo "PR from $SYNC_BRANCH -> ${{ env.TARGET }} already exists."
           fi
 
       - name: No-op summary
-        if: steps.upstream_check.outputs.needs_pr != 'true'
+        if: steps.make_branch.outputs.sync_branch == ''
         run: |
-          echo "Target branch already contains upstream/${{ inputs.upstream_branch || 'main' }}. No sync PR created."
+          echo "No sync branch created."
