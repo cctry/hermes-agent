@@ -17,13 +17,13 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  workflows: write
 
 jobs:
   sync-upstream:
     runs-on: ubuntu-latest
     env:
       SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+      HAS_PAT: ${{ secrets.UPSTREAM_SYNC_TOKEN != '' }}
     steps:
       - name: Checkout target branch
         uses: actions/checkout@v4
@@ -42,17 +42,6 @@ jobs:
         run: |
           git remote add upstream https://github.com/NousResearch/hermes-agent.git
           git fetch upstream "${{ inputs.upstream_branch || 'main' }}"
-
-      - name: Mirror upstream branch into fork main
-        run: |
-          git push origin "refs/remotes/upstream/${{ inputs.upstream_branch || 'main' }}:refs/heads/main" --force
-
-      - name: Explain missing sync token
-        if: failure()
-        run: |
-          echo "Mirroring upstream into fork main can fail with the default GITHUB_TOKEN when upstream changes include workflow files."
-          echo "Add repository secret UPSTREAM_SYNC_TOKEN with a PAT that has repo + workflow access, then rerun this workflow."
-          exit 1
 
       - name: Check whether target already contains upstream
         id: upstream_check
@@ -73,6 +62,15 @@ jobs:
           SYNC_BRANCH="sync/upstream-${{ inputs.upstream_branch || 'main' }}-$(date -u +%Y%m%d-%H%M%S)"
           git checkout -b "$SYNC_BRANCH" "origin/$TARGET"
           git merge --no-ff --no-edit "upstream/${{ inputs.upstream_branch || 'main' }}"
+          # When no PAT is available GITHUB_TOKEN lacks the workflow scope and
+          # cannot push commits that touch .github/workflows/.  Restore those
+          # files from the target branch so the push always succeeds.
+          # When a PAT (UPSTREAM_SYNC_TOKEN) is provided we skip this step and
+          # let upstream workflow changes through as-is.
+          if [ "$HAS_PAT" != "true" ]; then
+            git checkout "origin/$TARGET" -- .github/workflows/
+            git diff --cached --quiet || git commit -m "Restore local workflow files (exclude upstream workflow changes from sync)"
+          fi
           git push origin "$SYNC_BRANCH"
           echo "name=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
 
