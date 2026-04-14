@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, my]
   pull_request:
-    branches: [main]
+    branches: [main, my]
 
 # Cancel in-progress runs for the same PR/branch
 concurrency:
