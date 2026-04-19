@@ -6,10 +6,10 @@ HERMES_HOME="${HERMES_HOME:-/opt/data}"
 INSTALL_DIR="/opt/hermes"
 
 # --- Privilege dropping via gosu ---
-# When started as root (the default for Docker, or fakeroot in rootless Podman),
-# optionally remap the hermes user/group to match host-side ownership, fix volume
-# permissions, then re-exec as hermes.
-if [ "$(id -u)" = "0" ]; then
+# When started as root, full images remap the hermes user/group to match
+# host-side ownership and drop privileges via gosu. Slim images may not ship
+# with gosu/hermes and continue running as root.
+if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id hermes >/dev/null 2>&1; then
     if [ -n "$HERMES_UID" ] && [ "$HERMES_UID" != "$(id -u hermes)" ]; then
         echo "Changing hermes UID to $HERMES_UID"
         usermod -u "$HERMES_UID" hermes
@@ -37,7 +37,10 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 # --- Running as hermes from here ---
-source "${INSTALL_DIR}/.venv/bin/activate"
+if [ -f "${INSTALL_DIR}/.venv/bin/activate" ]; then
+    # Full image installs Hermes in a project venv; slim image uses system Python.
+    source "${INSTALL_DIR}/.venv/bin/activate"
+fi
 
 # Create essential directory structure.  Cache and platform directories
 # (cache/images, cache/audio, platforms/whatsapp, etc.) are created on
