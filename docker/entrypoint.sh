@@ -9,7 +9,7 @@ INSTALL_DIR="/opt/hermes"
 # When started as root, full images remap the hermes user/group to match
 # host-side ownership and drop privileges via gosu. Slim images may not ship
 # with gosu/hermes and continue running as root.
-if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id hermes >/dev/null 2>&1; then
+if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1 && id hermes >/dev/null 2>&1; then  # Full image path
     if [ -n "$HERMES_UID" ] && [ "$HERMES_UID" != "$(id -u hermes)" ]; then
         echo "Changing hermes UID to $HERMES_UID"
         usermod -u "$HERMES_UID" hermes
