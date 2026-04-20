@@ -1,7 +1,7 @@
 name: Docker Slim — Build & Push to GHCR
 
 # Push to ghcr.io on:
-#   • every merge to main  → tag :latest + :<sha>
+#   • every merge/commit to my  → tag :latest + :<sha>
 #   • every published GitHub release  → tag :latest + :<semver> + :<sha>
 #
 # Multi-platform: linux/amd64 + linux/arm64 (for Apple Silicon / Graviton hosts).
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - my
   release:
     types:
       - published
@@ -58,7 +58,7 @@ jobs:
 
       # ── 5. Compute image tags ─────────────────────────────────────────────────
       # docker/metadata-action generates canonical tags from the event context:
-      #   push to main   → :latest, :main, :<sha7>
+      #   push to my     → :latest, :<sha7>
       #   release v1.2.3 → :latest, :1.2.3, :1.2, :1, :<sha7>
       - name: Compute image metadata (tags + labels)
         id: meta
@@ -66,7 +66,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            # On every push to main: tag as :latest and :<short-sha>
+            # On every push to my: tag as :latest and :<short-sha>
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=,format=short
             # On release: tag as semver (e.g. :1.2.3, :1.2, :1)
