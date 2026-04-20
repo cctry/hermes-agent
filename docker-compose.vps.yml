@@ -2,13 +2,7 @@ version: "2.1"
 
 services:
   hermes:
-    build:
-      context: .
-      dockerfile: Dockerfile.slim
-      args:
-        GH_VERSION: "2.67.0"
-        TARGETARCH: "${TARGETARCH}"
-    image: hermes-agent:slim
+    image: ghcr.io/cctry/hermes-agent-slim:${HERMES_IMAGE_TAG:-latest}
     container_name: hermes
     restart: unless-stopped
     command: ["gateway", "run"]
