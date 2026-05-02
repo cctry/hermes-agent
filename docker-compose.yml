@@ -1,149 +1,52 @@
-# =============================================================================
-# Hermes Agent — docker-compose for the slim single-container image
-# =============================================================================
+#
+# docker-compose.yml for Hermes Agent
 #
 # Usage:
-#   Build:   docker compose -f docker-compose.yml build
-#   Start:   docker compose -f docker-compose.yml up -d
-#   Logs:    docker compose -f docker-compose.yml logs -f
-#   Shell:   docker compose -f docker-compose.yml exec hermes bash
-#   Stop:    docker compose -f docker-compose.yml down
+#   HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d
 #
-# First-run bootstrap:
-#   On the very first `up`, the entrypoint copies example config.yaml / .env
-#   into the mounted volume.  Edit ./data/.env to add your API keys, then
-#   restart: `docker compose restart hermes`
+# Set HERMES_UID / HERMES_GID to the host user that owns ~/.hermes so
+# files created inside the container stay readable/writable on the host.
+# The entrypoint remaps the internal `hermes` user to these values via
+# usermod/groupmod + gosu.
 #
-# Gateway mode (Telegram, Slack, …):
-#   Uncomment the `command:` line for the desired platform and supply the
-#   relevant token environment variables below.
-# =============================================================================
-
+# Security notes:
+#   - The dashboard service binds to 127.0.0.1 by default. It stores API
+#     keys; exposing it on LAN without auth is unsafe. If you want remote
+#     access, use an SSH tunnel or put it behind a reverse proxy that
+#     adds authentication — do NOT pass --insecure --host 0.0.0.0.
+#   - The gateway's API server is off unless you uncomment API_SERVER_KEY
+#     and API_SERVER_HOST. See docs/user-guide/api-server.md before doing
+#     this on an internet-facing host.
+#
 services:
-  hermes:
-    build:
-      context: .
-      dockerfile: Dockerfile.slim
-      # Pass --build-arg GH_VERSION=x.y.z here to pin a different gh release.
-      args:
-        GH_VERSION: "2.67.0"
-
-    image: hermes-agent:slim
-
-    # ── Container name ──────────────────────────────────────────────────────
+  gateway:
+    build: .
+    image: hermes-agent
     container_name: hermes
-
-    # ── Restart policy ───────────────────────────────────────────────────────
-    # "unless-stopped" keeps the container running across host reboots but
-    # lets you stop it manually without it auto-restarting.
     restart: unless-stopped
-
-    # ── Interactive TTY (required for the CLI mode) ──────────────────────────
-    # Remove these two lines if running in gateway/daemon mode only.
-    stdin_open: true
-    tty: true
-
-    # ── Command ──────────────────────────────────────────────────────────────
-    # Default (interactive CLI) — leave as-is for interactive use.
-    # command: []
-    #
-    # Gateway — Telegram:
-    # command: ["gateway", "telegram"]
-    #
-    # Gateway — Slack:
-    # command: ["gateway", "slack"]
-    #
-    # Gateway — Discord:
-    # command: ["gateway", "discord"]
-
-    # ── Volumes ──────────────────────────────────────────────────────────────
-    # /opt/data is the HERMES_HOME.  All config, API keys, skills, memories,
-    # and session logs are stored here.  Mount a named volume (recommended for
-    # production) or a host directory (easier for dev/debugging).
+    network_mode: host
     volumes:
-      # Named volume (default — persistent, managed by Docker).
-      - hermes_data:/opt/data
-      #
-      # Alternatively, bind-mount a host directory for easy file access:
-      #   - ./data:/opt/data
-
-    # ── Environment variables ─────────────────────────────────────────────────
-    # Sensitive values should be supplied via a .env file at the repo root
-    # (see .env.example) — Docker Compose automatically reads `.env` in the
-    # same directory as the compose file.
-    #
-    # Required: set at least one LLM provider key.
-    # Optional: set tool API keys as needed.
+      - ~/.hermes:/opt/data
     environment:
-      # ── Terminal backend (hardcoded local — do not change) ──────────────
-      TERMINAL_ENV: "local"
-      PYTHONUNBUFFERED: "1"
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
+      # To expose the OpenAI-compatible API server beyond localhost,
+      # uncomment BOTH lines (API_SERVER_KEY is mandatory for auth):
+      # - API_SERVER_HOST=0.0.0.0
+      # - API_SERVER_KEY=${API_SERVER_KEY}
+    command: ["gateway", "run"]
 
-      # ── LLM Provider (uncomment the one you use) ────────────────────────
-      # OpenRouter (recommended — single key for many models):
-      # OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
-      #
-      # Anthropic direct:
-      # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
-      #
-      # OpenAI direct:
-      # OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      #
-      # Google AI Studio / Gemini:
-      # GOOGLE_API_KEY: "${GOOGLE_API_KEY}"
-
-      # ── Tool API keys (optional) ─────────────────────────────────────────
-      # EXA_API_KEY: "${EXA_API_KEY}"
-      # PARALLEL_API_KEY: "${PARALLEL_API_KEY}"
-      # FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
-      # FAL_KEY: "${FAL_KEY}"
-      # GITHUB_TOKEN: "${GITHUB_TOKEN}"
-
-      # ── Gateway: Telegram ────────────────────────────────────────────────
-      # TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
-      # TELEGRAM_ALLOWED_USERS: "${TELEGRAM_ALLOWED_USERS}"
-
-      # ── Gateway: Slack ───────────────────────────────────────────────────
-      # SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}"
-      # SLACK_APP_TOKEN: "${SLACK_APP_TOKEN}"
-
-      # ── Gateway: Discord ─────────────────────────────────────────────────
-      # DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN}"
-
-      # ── Terminal timeouts ────────────────────────────────────────────────
-      TERMINAL_TIMEOUT: "120"
-      TERMINAL_LIFETIME_SECONDS: "600"
-
-    # ── Resource limits ───────────────────────────────────────────────────────
-    # These limits apply when using `docker compose up` (no Swarm needed for
-    # the `deploy` block with Compose v2 / Docker Engine 20.10+).
-    #
-    # Adjust to your hardware:
-    #   cpus 0.5  — half a core (good for background / gateway mode)
-    #   cpus 1.0  — one full core (recommended for interactive CLI)
-    #   memory 512M — hard upper bound; hermes idle RSS is typically < 120 MB
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-        reservations:
-          cpus: "0.25"
-          memory: 128M
-
-    # ── Logging ───────────────────────────────────────────────────────────────
-    # Rotate logs to prevent unbounded disk growth.
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "5"
-
-# =============================================================================
-# Volumes
-# =============================================================================
-volumes:
-  # hermes_data persists config, skills, memories, and session logs across
-  # container restarts and image rebuilds.
-  hermes_data:
-    driver: local
+  dashboard:
+    image: hermes-agent
+    container_name: hermes-dashboard
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - gateway
+    volumes:
+      - ~/.hermes:/opt/data
+    environment:
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
+    # Localhost-only. For remote access, tunnel via `ssh -L 9119:localhost:9119`.
+    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
