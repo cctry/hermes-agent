@@ -24,6 +24,16 @@ if [ ! -f "$HERMES_HOME/SOUL.md" ]; then
     cp "$INSTALL_DIR/docker/SOUL.md" "$HERMES_HOME/SOUL.md"
 fi
 
+# Install-method stamp (read by hermes status)
+printf 'docker\n' > "$HERMES_HOME/.install_method" 2>/dev/null || true
+
+# auth.json: bootstrap from env on first boot only. The [ ! -f ] guard
+# avoids clobbering rotated refresh tokens on container restart.
+if [ ! -f "$HERMES_HOME/auth.json" ] && [ -n "${HERMES_AUTH_JSON_BOOTSTRAP:-}" ]; then
+    printf '%s' "$HERMES_AUTH_JSON_BOOTSTRAP" > "$HERMES_HOME/auth.json"
+    chmod 600 "$HERMES_HOME/auth.json"
+fi
+
 # Sync bundled skills (manifest-based so user edits are preserved)
 if [ -d "$INSTALL_DIR/skills" ]; then
     python3 "$INSTALL_DIR/tools/skills_sync.py"

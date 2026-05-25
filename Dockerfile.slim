@@ -17,7 +17,6 @@
 # Extras included (kept minimal on purpose):
 #   pty         — pseudo-terminal backend required by the terminal tool on Linux
 #   mcp         — Model Context Protocol client support
-#   cron        — lightweight cron-expression parser (croniter)
 #   messaging   — Telegram / Slack / Discord gateway support
 #   google-api  — Google Workspace skill dependencies for Calendar / Docs / Sheets
 #
@@ -86,7 +85,7 @@ COPY . .
 # Install hermes-agent core + selected extras into the system Python.
 # --no-cache: do not write a uv cache layer (keeps this stage leaner).
 # --system:   install into /usr/local (the system Python), not a venv.
-RUN uv pip install --system --no-cache ".[pty,mcp,cron,messaging]" && \
+RUN uv pip install --system --no-cache ".[pty,mcp,messaging]" && \
     uv pip install --system --no-cache \
         google-api-python-client \
         google-auth-oauthlib \
