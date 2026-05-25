@@ -65,6 +65,7 @@ def _make_runner():
     runner._pending_messages = {}
     runner._busy_ack_ts = {}
     runner._draining = False
+    runner._busy_text_mode = "interrupt"
     runner.adapters = {}
     runner.config = MagicMock()
     runner.session_store = None
@@ -84,6 +85,8 @@ def _make_adapter(platform_val="telegram"):
     adapter.config = MagicMock()
     adapter.config.extra = {}
     adapter.platform = MagicMock(value=platform_val)
+    adapter._text_debounce = {}
+    adapter._busy_text_debounce_seconds = 0.6
     return adapter
 
 
@@ -185,6 +188,117 @@ class TestBusySessionAck:
         assert "Queued for the next turn" in content
         assert "respond once the current task finishes" in content
         assert "Interrupting" not in content
+
+    @pytest.mark.asyncio
+    async def test_busy_text_mode_queue_delegates_to_adapter_handle_message(self):
+        """busy_text_mode=queue lets the adapter debounce text silently."""
+        runner, sentinel = _make_runner()
+        runner._busy_input_mode = "interrupt"
+        runner._busy_text_mode = "queue"
+        adapter = _make_adapter()
+
+        first = _make_event(text="part one")
+        second = _make_event(text="part two")
+        sk = build_session_key(first.source)
+
+        agent = MagicMock()
+        runner._running_agents[sk] = agent
+        runner.adapters[first.source.platform] = adapter
+        runner.adapters[second.source.platform] = adapter
+
+        result1 = await runner._handle_active_session_busy_message(first, sk)
+        result2 = await runner._handle_active_session_busy_message(second, sk)
+
+        assert result1 is False
+        assert result2 is False
+        assert sk not in adapter._pending_messages
+        agent.interrupt.assert_not_called()
+        adapter._send_with_retry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_steer_mode_calls_agent_steer_no_interrupt_no_queue(self):
+        """busy_input_mode='steer' injects via agent.steer() and skips queueing."""
+        runner, sentinel = _make_runner()
+        runner._busy_input_mode = "steer"
+        adapter = _make_adapter()
+
+        event = _make_event(text="also check the tests")
+        sk = build_session_key(event.source)
+        runner.adapters[event.source.platform] = adapter
+
+        agent = MagicMock()
+        agent.steer = MagicMock(return_value=True)
+        runner._running_agents[sk] = agent
+
+        with patch("gateway.run.merge_pending_message_event") as mock_merge:
+            await runner._handle_active_session_busy_message(event, sk)
+
+        # VERIFY: Agent was steered, NOT interrupted
+        agent.steer.assert_called_once_with("also check the tests")
+        agent.interrupt.assert_not_called()
+
+        # VERIFY: No queueing — successful steer must NOT replay as next turn
+        mock_merge.assert_not_called()
+
+        # VERIFY: Ack mentions steer wording
+        adapter._send_with_retry.assert_called_once()
+        call_kwargs = adapter._send_with_retry.call_args
+        content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
+        assert "Steered" in content or "steer" in content.lower()
+        assert "Interrupting" not in content
+
+    @pytest.mark.asyncio
+    async def test_steer_mode_falls_back_to_queue_when_agent_rejects(self):
+        """If agent.steer() returns False, fall back to queue behavior."""
+        runner, sentinel = _make_runner()
+        runner._busy_input_mode = "steer"
+        adapter = _make_adapter()
+
+        event = _make_event(text="empty or rejected")
+        sk = build_session_key(event.source)
+        runner.adapters[event.source.platform] = adapter
+
+        agent = MagicMock()
+        agent.steer = MagicMock(return_value=False)  # rejected
+        runner._running_agents[sk] = agent
+
+        with patch("gateway.run.merge_pending_message_event") as mock_merge:
+            await runner._handle_active_session_busy_message(event, sk)
+
+        agent.steer.assert_called_once()
+        agent.interrupt.assert_not_called()
+        # Fell back to queue semantics: event was merged into pending messages
+        mock_merge.assert_called_once()
+
+        # Ack uses queue-mode wording (not steer, not interrupt)
+        call_kwargs = adapter._send_with_retry.call_args
+        content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
+        assert "Queued for the next turn" in content
+        assert "Steered" not in content
+
+    @pytest.mark.asyncio
+    async def test_steer_mode_falls_back_to_queue_when_agent_pending(self):
+        """If agent is still starting (sentinel), steer mode falls back to queue."""
+        runner, sentinel = _make_runner()
+        runner._busy_input_mode = "steer"
+        adapter = _make_adapter()
+
+        event = _make_event(text="arrived too early")
+        sk = build_session_key(event.source)
+        runner.adapters[event.source.platform] = adapter
+
+        # Agent is still being set up — sentinel in place
+        runner._running_agents[sk] = sentinel
+
+        with patch("gateway.run.merge_pending_message_event") as mock_merge:
+            await runner._handle_active_session_busy_message(event, sk)
+
+        # Event was queued instead of steered
+        mock_merge.assert_called_once()
+
+        call_kwargs = adapter._send_with_retry.call_args
+        content = call_kwargs.kwargs.get("content") or call_kwargs[1].get("content", "")
+        assert "Queued for the next turn" in content
 
     @pytest.mark.asyncio
     async def test_debounce_suppresses_rapid_acks(self):

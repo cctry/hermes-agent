@@ -178,14 +178,8 @@ ENV PYTHONUNBUFFERED=1
 VOLUME ["/opt/data"]
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-# entrypoint.sh:
-#   1. Creates the /opt/data directory structure on first run
-#   2. Copies example config.yaml and .env if not present
-#   3. Copies docker/SOUL.md if not present
-#   4. Runs tools/skills_sync.py to sync bundled skills (preserves user edits)
-#   5. exec hermes "$@"
-RUN chmod +x /opt/hermes/docker/entrypoint.sh
-ENTRYPOINT ["/opt/hermes/docker/entrypoint.sh"]
+RUN chmod +x /opt/hermes/docker/entrypoint-slim.sh
+ENTRYPOINT ["/opt/hermes/docker/entrypoint-slim.sh"]
 
 # Default: interactive CLI mode.
 # Override in docker-compose `command:` for gateway mode, e.g.:

@@ -88,6 +88,9 @@ class TestHandleResumeCommand:
         assert "Research" in result
         assert "Coding" in result
         assert "Named Sessions" in result
+        assert "1." in result
+        assert "2." in result
+        assert "/resume 1" in result
         db.close()
 
     @pytest.mark.asyncio
@@ -102,6 +105,47 @@ class TestHandleResumeCommand:
         result = await runner._handle_resume_command(event)
         assert "No named sessions" in result
         assert "/title" in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_resume_by_index(self, tmp_path):
+        """Numeric argument resumes the indexed titled session from the list."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("sess_001", "telegram")
+        db.create_session("sess_002", "telegram")
+        db.set_session_title("sess_001", "Research")
+        db.set_session_title("sess_002", "Coding")
+        db.create_session("current_session_001", "telegram")
+
+        event = _make_event(text="/resume 2")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        result = await runner._handle_resume_command(event)
+
+        assert "Resumed" in result
+        runner.session_store.switch_session.assert_called_once()
+        call_args = runner.session_store.switch_session.call_args
+        assert call_args[0][1] == "sess_001"
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_resume_index_out_of_range(self, tmp_path):
+        """Out-of-range numeric arguments show a helpful error."""
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("sess_001", "telegram")
+        db.set_session_title("sess_001", "Research")
+        db.create_session("current_session_001", "telegram")
+
+        event = _make_event(text="/resume 9")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        result = await runner._handle_resume_command(event)
+
+        assert "out of range" in result.lower()
+        assert "/resume" in result
+        runner.session_store.switch_session.assert_not_called()
         db.close()
 
     @pytest.mark.asyncio
@@ -229,4 +273,31 @@ class TestHandleResumeCommand:
         await runner._handle_resume_command(event)
 
         assert real_key not in runner._running_agents
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_resume_evicts_cached_agent(self, tmp_path):
+        """Gateway /resume evicts the cached AIAgent so the next message
+        rebuilds with the correct session_id end-to-end — mirrors /branch
+        and /reset. Without this, the cached agent's memory provider keeps
+        writing into the wrong session. See #6672.
+        """
+        import threading
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        db.create_session("old_session", "telegram")
+        db.set_session_title("old_session", "Old Work")
+        db.create_session("current_session_001", "telegram")
+
+        event = _make_event(text="/resume Old Work")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        # Seed the cache with a fake agent
+        real_key = _session_key_for_event(event)
+        runner._agent_cache = {real_key: (MagicMock(), object())}
+        runner._agent_cache_lock = threading.RLock()
+
+        await runner._handle_resume_command(event)
+
+        assert real_key not in runner._agent_cache
         db.close()
