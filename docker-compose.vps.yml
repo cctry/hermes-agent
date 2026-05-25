@@ -18,6 +18,7 @@ services:
       HERMES_MODEL: "${HERMES_MODEL:-gpt-5.4-mini}"
 
       # Provider auth
+      META_API_KEY: "${META_API_KEY}"
       COPILOT_GITHUB_TOKEN: "${COPILOT_GITHUB_TOKEN}"
       GH_TOKEN: "${GH_TOKEN}"
       GITHUB_TOKEN: "${GITHUB_TOKEN}"
