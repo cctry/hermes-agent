@@ -1,9 +1,10 @@
-# Git
+# ── Version control ──────────────────────────────────────────────────────────
 .git
 .gitignore
 .gitmodules
+.gitattributes
 
-# Dependencies
+# ── Node / npm (not used in the slim image) ───────────────────────────────────
 node_modules
 **/node_modules
 .venv
@@ -19,12 +20,39 @@ node_modules
 ui-tui/dist/
 ui-tui/packages/hermes-ink/dist/
 
-# CI/CD
+# ── CI/CD ─────────────────────────────────────────────────────────────────────
 .github
+.envrc
 
-# Environment files
+# ── Python build artefacts ────────────────────────────────────────────────────
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info
+dist/
+build/
+.eggs/
+*.whl
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env/
+
+# ── Environment secrets ───────────────────────────────────────────────────────
 .env
 
+# ── Tests (not needed at runtime) ────────────────────────────────────────────
+tests/
+conftest.py
+
+# ── Documentation & web assets (large, not needed in image) ──────────────────
+docs/
+landingpage/
+website/
+assets/
 *.md
 
 # Runtime data (bind-mounted at /opt/data; must not leak into build context)
@@ -35,3 +63,25 @@ data/
 # Compose/profile runtime state (bind-mounted; avoid ownership/secret issues)
 hermes-config/
 runtime/
+
+# ── Dev / editor files ────────────────────────────────────────────────────────
+.plans/
+plans/
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# ── Nix ───────────────────────────────────────────────────────────────────────
+flake.nix
+flake.lock
+nix/
+
+# ── RL / training environments (not needed in the slim image) ────────────────
+tinker-atropos/
+environments/
+
+# ── Misc large artefacts ──────────────────────────────────────────────────────
+*.tar.gz
+*.zip

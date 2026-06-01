@@ -1130,3 +1130,82 @@ not the specific names.
 
 Reviewers should reject new change-detector tests; authors should convert
 them into invariants before re-requesting review.
+
+---
+
+## Upstream Sync Conflict Resolution
+
+This fork (`my` branch) tracks `upstream/main` and cherry-picks custom changes
+on top. Periodically a sync PR is generated automatically — it may arrive
+**dirty** (GitHub reports `mergeable_state: dirty`) when both branches touched
+the same file.
+
+### Fork-specific files (always prefer `my` branch version)
+
+| File | Why |
+|------|-----|
+| `Dockerfile.slim` | Slim single-container image for VPS deployment |
+| `docker-compose.slim.yml` | Compose file for the slim image |
+| `docker-compose.vps.yml` | VPS gateway stack |
+| `docker-compose.signal.yml` | Signal-CLI sidecar overlay |
+| `docker/entrypoint.sh` | Customised entrypoint (gosu drop, slim paths) |
+| `.github/workflows/docker-slim-pr.yml` | Docker slim PR workflow |
+| `.github/workflows/docker-slim-publish.yml` | Docker slim publish workflow |
+| `.github/workflows/upstream-sync-pr.yml` | Automated upstream sync |
+| `plugins/memory/mem0_http/` | mem0 HTTP-based memory provider |
+
+### Common conflict patterns and resolutions
+
+#### `.dockerignore`
+**Pattern:** upstream adds a new exclusion; `my` adds different exclusions.  
+**Resolution:** keep both sets of additions — append `my`'s block below upstream's.
+
+#### `docker-compose.yml`
+**Pattern:** upstream ships a new `docker-compose.yml`; `my` already has one for the slim image.  
+**Resolution:** keep upstream's version as `docker-compose.yml` (full image, two services);
+save `my`'s version as `docker-compose.slim.yml` (consistent with existing `*.vps.yml` / `*.signal.yml` naming).
+
+#### `.github/workflows/tests.yml`
+**Pattern:** upstream targets `branches: [main]`; `my` targets `branches: [main, my]`.  
+**Resolution:** merge both — target `[main, my]` and add upstream's `paths-ignore` for markdown/docs.
+
+#### `.github/workflows/nix.yml`
+**Pattern:** upstream runs on all PRs; `my` adds `paths:` filters to avoid CI cost.  
+**Resolution:** keep `my`'s path filters (subset of nix-related files) — they are strictly
+more efficient without losing coverage.
+
+### Step-by-step workflow for an LLM agent
+
+```bash
+# 1. Fetch both branches
+git fetch --unshallow origin
+git fetch origin my:refs/remotes/origin/my
+
+# 2. Identify conflicting files
+git merge --no-commit origin/my 2>&1 | grep CONFLICT
+
+# 3. For each conflicted file, apply the rules above:
+#    - Check what upstream (HEAD) changed  →  git show HEAD:<file>
+#    - Check what my branch changed        →  git show origin/my:<file>
+#    - Write a merged version with no conflict markers
+
+# 4. Stage resolved files
+git add <resolved-files>
+
+# 5. For "both added" conflicts where the files serve different purposes,
+#    save the my-branch version under a new name before staging:
+#    git show origin/my:docker-compose.yml > docker-compose.slim.yml
+#    git add docker-compose.slim.yml
+
+# 6. Commit the merge
+git commit --no-edit   # uses auto-generated merge commit message
+
+# 7. Push via report_progress (never git push directly)
+```
+
+### Verify before committing
+
+```bash
+# No conflict markers must remain in any file
+git diff --cached | grep -P "^[+-](<<<<<<|=======$|>>>>>>)" && echo "CONFLICTS REMAIN" || echo "Clean"
+```
