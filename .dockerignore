@@ -1,87 +1,99 @@
-# ── Version control ──────────────────────────────────────────────────────────
+# Version control
 .git
 .gitignore
 .gitmodules
 .gitattributes
 
-# ── Node / npm (not used in the slim image) ───────────────────────────────────
-node_modules
-**/node_modules
-.venv
-**/.venv
-.notebooklm-cli-venv/
-.notebooklm-playwright/
-.pip-cache/
-.uv-cache/
-
-# Built artifacts that are regenerated inside the image.  Excluded so local
-# rebuilds on the developer's machine don't invalidate the npm-install layer
-# that now depends on the full ui-tui/packages/hermes-ink/ tree being present.
-ui-tui/dist/
-ui-tui/packages/hermes-ink/dist/
-
-# ── CI/CD ─────────────────────────────────────────────────────────────────────
-.github
-.envrc
-
-# ── Python build artefacts ────────────────────────────────────────────────────
+# Python build artifacts
 __pycache__
 *.py[cod]
+*$py.class
+*.so
+.Python
 *.pyo
 *.pyd
 *.egg-info
+*.egg-info/
 dist/
 build/
 .eggs/
 *.whl
 
-# ── Virtual environments ──────────────────────────────────────────────────────
+# Virtual environments and dependency caches
+.venv
 .venv/
+**/.venv
 venv/
 env/
+ENV/
 .env/
+node_modules
+**/node_modules
+.notebooklm-cli-venv/
+.notebooklm-playwright/
+.pip-cache/
+.uv-cache/
 
-# ── Environment secrets ───────────────────────────────────────────────────────
+# Built artifacts regenerated inside the image
+ui-tui/dist/
+ui-tui/packages/hermes-ink/dist/
+
+# CI/CD and environment files
+.github
 .env
+.env.*
 
-# ── Tests (not needed at runtime) ────────────────────────────────────────────
+# IDE and developer files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Tests and coverage
 tests/
 conftest.py
+.pytest_cache/
+.coverage
+htmlcov/
 
-# ── Documentation & web assets (large, not needed in image) ──────────────────
+# Documentation and web assets not needed at runtime
+*.md
+website/
 docs/
 landingpage/
-website/
 assets/
-*.md
+infographic/
+plugins/hermes-achievements/docs/
 
 # Runtime data (bind-mounted at /opt/data; must not leak into build context)
 data/
 .hermes-docker/
 .notebooklm-home/
-
-# Compose/profile runtime state (bind-mounted; avoid ownership/secret issues)
 hermes-config/
 runtime/
 
-# ── Dev / editor files ────────────────────────────────────────────────────────
-.plans/
-plans/
-.DS_Store
-*.swp
-*.swo
-.idea/
-.vscode/
+# Desktop app source is not installed in the container
+apps/
 
-# ── Nix ───────────────────────────────────────────────────────────────────────
+# Packaging and repository metadata not needed in the image
+nix/
 flake.nix
 flake.lock
-nix/
+packaging/
+plans/
+.plans/
+acp_registry/
+.env.example
+.envrc
+.hadolint.yaml
+.mailmap
+LICENSE
 
-# ── RL / training environments (not needed in the slim image) ────────────────
+# RL and training environments not needed in the slim image
 tinker-atropos/
 environments/
 
-# ── Misc large artefacts ──────────────────────────────────────────────────────
+# Miscellaneous large artifacts
 *.tar.gz
 *.zip
