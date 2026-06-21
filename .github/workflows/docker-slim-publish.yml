@@ -101,7 +101,20 @@ jobs:
           provenance: true    # attach SLSA provenance attestation
           sbom: true          # attach SPDX SBOM attestation
 
-      # ── 7. Report pushed tags ─────────────────────────────────────────────────
+      # ── 7. Smoke test the published amd64 image ───────────────────────────────
+      # Running without --entrypoint exercises config bootstrap, bundled-skill
+      # sync, editable project wiring, and the console script from the venv.
+      - name: Smoke test published image
+        if: github.event_name == 'push'
+        run: |
+          IMAGE="${IMAGE_NAME}:${GITHUB_SHA::7}"
+          docker pull "$IMAGE"
+          docker run --rm \
+            -e HERMES_HOME=/tmp/hermes-test \
+            -e TERMINAL_ENV=local \
+            "$IMAGE" --help
+
+      # ── 8. Report pushed tags ─────────────────────────────────────────────────
       - name: Report pushed image
         run: |
           echo "### 🐳 Slim image pushed to GHCR" >> "$GITHUB_STEP_SUMMARY"

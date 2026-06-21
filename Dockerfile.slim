@@ -7,8 +7,8 @@
 #        All shell/CLI commands execute locally inside the container.
 #
 # Build strategy:
-#   Stage 1 "builder" — compiles/installs all Python wheels using uv and
-#   downloads external CLI binaries (gh).  This stage carries build-time
+#   Stage 1 "builder" — installs dependencies into a relocatable venv using uv
+#   and downloads external CLI binaries (gh). This stage carries build-time
 #   toolchain (gcc, build-essential) that must NOT appear in the final image.
 #
 #   Stage 2 "runtime" — starts from the same slim base, copies only the
@@ -76,26 +76,38 @@ RUN ARCH="${TARGETARCH:-}" && \
     chmod +x /usr/local/bin/gh
 
 # ── Install Python packages ───────────────────────────────────────────────────
-# Copy the full source so uv can resolve the local [project] and its extras.
-# (Splitting "copy metadata" / "copy source" is desirable for cache efficiency
-#  but setuptools requires the full tree to build; keep it simple here.)
-WORKDIR /build
+# Install locked dependencies separately from the project. This avoids copying
+# Hermes into site-packages and then copying the same source to /opt/hermes.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+WORKDIR /opt/hermes
+COPY pyproject.toml uv.lock README.md LICENSE ./
+RUN uv sync --frozen --no-cache --no-install-project \
+        --extra pty \
+        --extra mcp \
+        --extra messaging \
+        --extra google
+
+# Copy the source at its final runtime path, then add only editable metadata and
+# console scripts to the venv. The editable link points at /opt/hermes in both
+# stages, so the project itself is stored exactly once in the final image.
 COPY . .
+RUN uv pip install --python /opt/venv/bin/python --no-cache --no-deps \
+        --editable /opt/hermes
 
-# Install hermes-agent core + selected extras into the system Python.
-# --no-cache: do not write a uv cache layer (keeps this stage leaner).
-# --system:   install into /usr/local (the system Python), not a venv.
-RUN uv pip install --system --no-cache ".[pty,mcp,messaging]" && \
-    uv pip install --system --no-cache \
-        google-api-python-client \
-        google-auth-oauthlib \
-        google-auth-httplib2
-
-# Install gsutil (standalone PyPI package — lightweight GCS CLI, ~10 MB).
-# Note: Google's official recommendation is now `gcloud storage`, but the
-# standalone gsutil PyPI package still works for common operations without
-# pulling in the 400 MB+ gcloud SDK.
-RUN uv pip install --system --no-cache gsutil
+# google-api-python-client bundles static discovery documents for hundreds of
+# unrelated APIs. Hermes only builds these Workspace services; Google Chat is
+# retained for the optional platform plugin. Keeping their local documents
+# preserves offline discovery behavior while dropping roughly 96 MB.
+RUN find /opt/venv/lib/python3.12/site-packages/googleapiclient/discovery_cache/documents \
+        -type f -name '*.json' \
+        ! -name 'calendar.v3.json' \
+        ! -name 'gmail.v1.json' \
+        ! -name 'drive.v3.json' \
+        ! -name 'people.v1.json' \
+        ! -name 'sheets.v4.json' \
+        ! -name 'docs.v1.json' \
+        ! -name 'chat.v1.json' \
+        -delete
 
 
 # -----------------------------------------------------------------------------
@@ -129,24 +141,14 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
-# ── Copy Python packages from the builder stage ───────────────────────────────
-# Everything installed by uv lives under /usr/local/lib/python3.12/.
-# Copying the entire tree brings in site-packages, dist-info metadata, etc.
-COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
-
-# ── Copy console-script entry points ─────────────────────────────────────────
-# pyproject.toml defines:
-#   hermes        → hermes_cli.main:main
-#   hermes-agent  → run_agent:main
-#   hermes-acp    → acp_adapter.entry:main
-# The glob "hermes*" copies all three (and any future additions).
-COPY --from=builder /usr/local/bin/hermes* /usr/local/bin/
+# ── Copy Python environment from the builder stage ───────────────────────────
+# The base interpreter is already present in this stage. Copy only the venv,
+# avoiding a duplicate layer containing Python's standard library.
+COPY --from=builder /opt/venv /opt/venv
 
 # ── Copy external CLI binaries ────────────────────────────────────────────────
 # GitHub CLI — for repo management, PR automation, etc.
 COPY --from=builder /usr/local/bin/gh /usr/local/bin/gh
-# gsutil console-script wrapper (Python shebang script, ~1 KB)
-COPY --from=builder /usr/local/bin/gsutil /usr/local/bin/gsutil
 
 # ── Copy application source ───────────────────────────────────────────────────
 # Required by the entrypoint script for:
@@ -161,6 +163,11 @@ WORKDIR /opt/hermes
 # HERMES_HOME: all user data (config, API keys, memories, sessions) goes here.
 #              Must be a mounted volume for persistence across restarts.
 ENV HERMES_HOME=/opt/data
+
+# Prefer the dependency venv and make the single source tree importable from
+# any working directory used by the terminal tool.
+ENV PATH="/opt/venv/bin:${PATH}"
+ENV PYTHONPATH=/opt/hermes
 
 # TERMINAL_ENV=local: the agent executes shell commands directly inside this
 # container.  This is the correct setting when running Hermes as the sole
