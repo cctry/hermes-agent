@@ -4829,6 +4829,14 @@ class TelegramAdapter(BasePlatformAdapter):
                     action="typing",
                     message_thread_id=message_thread_id,
                 )
+                if _is_dm_topic and message_thread_id is not None:
+                    try:
+                        await self._bot.send_chat_action(
+                            chat_id=int(chat_id),
+                            action="typing",
+                        )
+                    except Exception:
+                        pass
             except Exception as e:
                 # For DM topic lanes, Telegram may reject message_thread_id.
                 # Fall back to sending typing without thread_id so the typing

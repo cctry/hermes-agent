@@ -321,6 +321,40 @@ class TestDMTopicFallbackReplyToMode:
         "telegram_reply_to_message_id": "12345",
     }
 
+    @pytest.mark.asyncio
+    async def test_send_typing_mirrors_dm_topic_action_to_main_dm(self, adapter_factory):
+        """DM topic chat actions can be accepted without surfacing top-bar typing."""
+        adapter = adapter_factory()
+        adapter._bot = AsyncMock()
+
+        await adapter.send_typing("5152369880", metadata=self.DM_TOPIC_METADATA)
+
+        assert adapter._bot.send_chat_action.await_count == 2
+        first = adapter._bot.send_chat_action.await_args_list[0].kwargs
+        second = adapter._bot.send_chat_action.await_args_list[1].kwargs
+        assert first == {
+            "chat_id": 5152369880,
+            "action": "typing",
+            "message_thread_id": 42,
+        }
+        assert second == {
+            "chat_id": 5152369880,
+            "action": "typing",
+        }
+
+    @pytest.mark.asyncio
+    async def test_send_typing_non_dm_topic_keeps_single_thread_action(self, adapter_factory):
+        adapter = adapter_factory()
+        adapter._bot = AsyncMock()
+
+        await adapter.send_typing("5152369880", metadata={"thread_id": "42"})
+
+        adapter._bot.send_chat_action.assert_awaited_once_with(
+            chat_id=5152369880,
+            action="typing",
+            message_thread_id=42,
+        )
+
     # -- _reply_to_message_id_for_send classmethod --
 
     def test_reply_to_id_suppressed_when_off(self):
