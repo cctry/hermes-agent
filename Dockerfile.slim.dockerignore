@@ -1,0 +1,71 @@
+# Version control and CI metadata
+.git
+.github
+.gitignore
+.gitmodules
+.gitattributes
+
+# Local environments, caches, and secrets
+.venv/
+**/.venv/
+venv/
+env/
+ENV/
+node_modules/
+**/node_modules/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.pip-cache/
+.uv-cache/
+.env
+.env.*
+!.env.example
+
+# Runtime state is supplied by the persistent /opt/data mount
+data/
+.hermes-docker/
+.notebooklm-home/
+hermes-config/
+runtime/
+
+# Frontend, desktop, docs, tests, and release material are not used by the
+# Python-only slim runtime. Runtime catalogs and skill markdown remain included.
+apps/
+web/
+ui-tui/
+website/
+docs/
+landingpage/
+assets/
+infographic/
+tests/
+conftest.py
+RELEASE_*.md
+README.*
+!README.md
+AGENTS.md
+
+# Packaging and development-only trees
+acp_registry/
+environments/
+nix/
+packaging/
+plans/
+.plans/
+tinker-atropos/
+package.json
+package-lock.json
+flake.nix
+flake.lock
+.envrc
+.hadolint.yaml
+.mailmap
+.DS_Store
+*.swp
+*.swo
+*.tar.gz
+*.zip

@@ -1,0 +1,23 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        openjdk-17-jre-headless && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+ARG SIGNAL_CLI_VERSION=0.13.20
+RUN curl -fsSL \
+        "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}.tar.gz" \
+        | tar xz -C /opt && \
+    ln -sf "/opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli" /usr/local/bin/signal-cli
+
+COPY docker/signal-cli-entrypoint.sh /usr/local/bin/signal-cli-entrypoint.sh
+RUN chmod +x /usr/local/bin/signal-cli-entrypoint.sh
+
+VOLUME ["/root/.local/share/signal-cli"]
+
+ENTRYPOINT ["/usr/local/bin/signal-cli-entrypoint.sh"]
+CMD ["daemon", "--http", "0.0.0.0:8080"]
