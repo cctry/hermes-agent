@@ -210,6 +210,51 @@ source .venv/bin/activate   # or: source venv/bin/activate
 `$HOME/.hermes/hermes-agent/venv` (for worktrees that share a venv with the
 main checkout).
 
+## Upstream Merge Preservation
+
+When merging `upstream/main` or any upstream sync into `my`, treat branch-only
+Hermes changes as requirements, not as disposable conflict noise.
+
+Before merging:
+- List commits that are on `my` but not on the upstream branch.
+- Identify protected local changes and invariants.
+- Create a backup branch before starting conflict resolution.
+
+During conflict resolution:
+- Do not blindly take upstream for conflicted files.
+- Preserve local behavior unless there is a clear, documented reason to change it.
+- If upstream conflicts with a local optimization, reapply the optimization on
+  top of upstream.
+- Do not drop local tests that protect branch-specific behavior.
+
+After merging:
+- Use `git range-diff` or an equivalent check to confirm branch-only commits are
+  still represented.
+- Manually inspect protected files.
+- Run targeted tests for the affected protected areas.
+- Summarize any local behavior that was intentionally removed, with the reason.
+
+Protected Hermes areas include:
+- Slim Docker image optimizations: `Dockerfile.slim`, `Dockerfile.slim.dockerignore`.
+- Slim entrypoint and bootstrap behavior: `docker/entrypoint-slim.sh`.
+- VPS GHCR deploy flow: `docker-compose.vps.yml`, `.local-vps/*`.
+- Runtime/provider configuration for the VPS path: Meta AI provider
+  `meta-ai`, model `muse-spark`, direct base URL `https://api.ai.meta.com/v1`,
+  and provider auth passthrough such as `META_AI_KEY` / `META_API_KEY`.
+- Telegram reply/topic handling and related tests.
+- Image-size, dependency-install, and startup-time optimizations.
+
+Useful verification commands:
+
+```bash
+git fetch origin upstream
+git branch backup/my-before-merge
+git log --oneline --cherry-pick --right-only upstream/main...my
+git merge upstream/main
+git range-diff upstream/main...backup/my-before-merge upstream/main...my
+git diff backup/my-before-merge..my -- Dockerfile.slim docker/entrypoint-slim.sh docker-compose.vps.yml .local-vps
+```
+
 ## Project Structure
 
 File counts shift constantly — don't treat the tree below as exhaustive.

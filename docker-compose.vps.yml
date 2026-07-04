@@ -14,11 +14,12 @@ services:
       GIT_CONFIG_GLOBAL: /opt/data/gitconfig
       TERMINAL_ENV: local
       PYTHONUNBUFFERED: "1"
-      HERMES_INFERENCE_PROVIDER: "${HERMES_INFERENCE_PROVIDER:-copilot}"
-      HERMES_MODEL: "${HERMES_MODEL:-gpt-5.4-mini}"
+      HERMES_INFERENCE_PROVIDER: "${HERMES_INFERENCE_PROVIDER:-meta-ai}"
+      HERMES_MODEL: "${HERMES_MODEL:-muse-spark}"
 
       # Provider auth
       META_API_KEY: "${META_API_KEY}"
+      META_AI_KEY: "${META_AI_KEY}"
       COPILOT_GITHUB_TOKEN: "${COPILOT_GITHUB_TOKEN}"
       GH_TOKEN: "${GH_TOKEN}"
       GITHUB_TOKEN: "${GITHUB_TOKEN}"
