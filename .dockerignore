@@ -1,104 +1,99 @@
-# Git
+# Version control
 .git
 .gitignore
 .gitmodules
+.gitattributes
 
-# Python
+# Python build artifacts
 __pycache__
 *.py[cod]
 *$py.class
 *.so
 .Python
+*.pyo
+*.pyd
+*.egg-info
 *.egg-info/
 dist/
 build/
+.eggs/
+*.whl
 
-# Virtual environments
+# Virtual environments and dependency caches
+.venv
+.venv/
+**/.venv
 venv/
 env/
 ENV/
-
-# Dependencies
+.env/
 node_modules
 **/node_modules
-.venv
-**/.venv
 .notebooklm-cli-venv/
 .notebooklm-playwright/
 .pip-cache/
 .uv-cache/
 
-# Built artifacts that are regenerated inside the image.  Excluded so local
-# rebuilds on the developer's machine don't invalidate the npm-install layer
-# that now depends on the full ui-tui/packages/hermes-ink/ tree being present.
+# Built artifacts regenerated inside the image
 ui-tui/dist/
 ui-tui/packages/hermes-ink/dist/
 
-# CI/CD
+# CI/CD and environment files
 .github
-
-# Environment files
 .env
 .env.*
 
-# IDE
+# IDE and developer files
 .vscode/
 .idea/
 *.swp
 *.swo
+.DS_Store
 
-# Testing
+# Tests and coverage
+tests/
+conftest.py
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Documentation
+# Documentation and web assets not needed at runtime
 *.md
+website/
+docs/
+landingpage/
+assets/
+infographic/
+plugins/hermes-achievements/docs/
 
 # Runtime data (bind-mounted at /opt/data; must not leak into build context)
 data/
 .hermes-docker/
 .notebooklm-home/
-
-# Compose/profile runtime state (bind-mounted; avoid ownership/secret issues)
 hermes-config/
 runtime/
 
-# ---------- Not needed inside the Docker image ----------
-
-# Desktop app source (Tauri/Electron); never installed in the container
+# Desktop app source is not installed in the container
 apps/
 
-# Test suite — not shipped in production images
-tests/
-
-# Documentation site (Docusaurus) and supplementary docs
-website/
-docs/
-
-# Assets only used by the GitHub README
-assets/
-infographic/
-
-# Plugin-level docs (hermes-achievements ships docs/ but the runtime doesn't read them)
-plugins/hermes-achievements/docs/
-
-# Nix / Homebrew / AUR packaging metadata — irrelevant to Docker
+# Packaging and repository metadata not needed in the image
 nix/
 flake.nix
 flake.lock
 packaging/
-
-# Design and planning documents
 plans/
 .plans/
-
-# ACP registry manifest (icon + agent.json) — not consumed at runtime
 acp_registry/
-
-# Repo-level dotfiles that are git-only or dev-tooling config
 .env.example
 .envrc
-.gitattributes
 .hadolint.yaml
 .mailmap
+LICENSE
+
+# RL and training environments not needed in the slim image
+tinker-atropos/
+environments/
+
+# Miscellaneous large artifacts
+*.tar.gz
+*.zip
