@@ -141,6 +141,10 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
+# Match the full image's unprivileged runtime user. The slim entrypoint starts
+# as root for volume bootstrap, then drops to this user before running Hermes.
+RUN useradd -u 10000 -m -d /opt/data/home -s /bin/bash hermes
+
 # ── Copy Python environment from the builder stage ───────────────────────────
 # The base interpreter is already present in this stage. Copy only the venv,
 # avoiding a duplicate layer containing Python's standard library.

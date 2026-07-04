@@ -5,6 +5,28 @@ set -e
 
 HERMES_HOME="${HERMES_HOME:-/opt/data}"
 INSTALL_DIR="/opt/hermes"
+export HOME="$HERMES_HOME/home"
+
+exec_as_runtime_user() {
+    if [ "$(id -u)" != "0" ]; then
+        exec "$@"
+    fi
+
+    exec python3 - "$@" <<'PY'
+import os
+import pwd
+import sys
+
+target = pwd.getpwnam("hermes")
+os.environ["HOME"] = os.environ.get("HOME") or os.path.join(
+    os.environ.get("HERMES_HOME", "/opt/data"), "home"
+)
+os.setgid(target.pw_gid)
+os.initgroups(target.pw_name, target.pw_gid)
+os.setuid(target.pw_uid)
+os.execvp(sys.argv[1], sys.argv[1:])
+PY
+}
 
 # Create essential directory structure.
 mkdir -p "$HERMES_HOME"/{cron,sessions,logs,hooks,memories,skills,skins,plans,workspace,home}
@@ -39,10 +61,15 @@ if [ -d "$INSTALL_DIR/skills" ]; then
     python3 "$INSTALL_DIR/tools/skills_sync.py"
 fi
 
+if [ "$(id -u)" = "0" ]; then
+    chown -R hermes:hermes "$HERMES_HOME" 2>/dev/null || \
+        echo "[entrypoint-slim] Warning: chown $HERMES_HOME failed; continuing"
+fi
+
 # Final exec: if the first arg resolves to an executable on PATH, run it
 # directly (needed for sandbox containers running `sleep infinity`).
 # Otherwise treat args as a hermes subcommand.
 if [ $# -gt 0 ] && command -v "$1" >/dev/null 2>&1; then
-    exec "$@"
+    exec_as_runtime_user "$@"
 fi
-exec hermes "$@"
+exec_as_runtime_user hermes "$@"
