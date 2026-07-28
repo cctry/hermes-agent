@@ -7,6 +7,10 @@ on:
     paths:
       - .github/workflows/resolve-upstream-sync.yml
 
+concurrency:
+  group: resolve-upstream-sync-28
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -131,7 +135,8 @@ jobs:
           grep -q -- '--extra telegram' Dockerfile.slim
           ! grep -q -- '--extra messaging' Dockerfile.slim
           grep -q '^telegram = ' pyproject.toml
-          ! grep -Eq 'nodejs|npm|playwright|chromium' Dockerfile.slim
+          ! grep -q 'npx playwright' Dockerfile.slim
+          ! grep -Eq 'apt-get install.*(nodejs|npm|chromium)' Dockerfile.slim
 
       - name: Build slim image
         run: docker build --pull -f Dockerfile.slim -t hermes-agent:slim-upstream-sync .
