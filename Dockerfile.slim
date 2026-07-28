@@ -15,14 +15,15 @@
 #   compiled artefacts and the application source.
 #
 # Extras included (kept minimal on purpose):
-#   pty         — pseudo-terminal backend required by the terminal tool on Linux
-#   mcp         — Model Context Protocol client support
-#   messaging   — Telegram / Slack / Discord gateway support
-#   google-api  — Google Workspace skill dependencies for Calendar / Docs / Sheets
+#   pty       — pseudo-terminal backend required by the terminal tool on Linux
+#   mcp       — Model Context Protocol client support
+#   telegram  — Telegram gateway only (no Discord or Slack SDKs)
+#   google    — Google Workspace skill dependencies for Calendar / Docs / Sheets
 #
 # Extras deliberately OMITTED to stay lean:
-#   Node.js / WhatsApp bridge, voice, tts-premium, modal, daytona, rl,
-#   matrix, honcho, acp, mistral, dingtalk, feishu
+#   Web/desktop UI build toolchain, Node.js / WhatsApp bridge, Discord, Slack,
+#   voice, tts-premium, modal, daytona, rl, matrix, honcho, acp, mistral,
+#   dingtalk, feishu
 #
 # TERMINAL_ENV is forced to "local" so the agent runs commands directly
 # inside this container — no Docker socket, no DinD.
@@ -84,7 +85,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN uv sync --frozen --no-cache --no-install-project \
         --extra pty \
         --extra mcp \
-        --extra messaging \
+        --extra telegram \
         --extra google
 
 # Copy the source at its final runtime path, then add only editable metadata and

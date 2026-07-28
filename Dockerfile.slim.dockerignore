@@ -69,3 +69,9 @@ flake.lock
 *.swo
 *.tar.gz
 *.zip
+
+# Telegram-only channel footprint. Keep the shared gateway core, but omit
+# plugin adapters and source trees for channels this image cannot run.
+plugins/platforms/*
+!plugins/platforms/telegram/
+!plugins/platforms/telegram/**
