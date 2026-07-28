@@ -9,7 +9,6 @@ __pycache__/
 act/
 .act-sandbox-agent.*
 .venv/
-.venv
 .vscode/
 .env
 .op.env
@@ -26,6 +25,7 @@ act/
 .pip-cache/
 .uv-cache/
 compose.hermes.local.yml
+.local-vps
 export*
 __pycache__/model_tools.cpython-310.pyc
 __pycache__/web_tools.cpython-310.pyc

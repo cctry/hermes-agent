@@ -1,0 +1,35 @@
+version: "2.1"
+
+services:
+  hermes:
+    depends_on:
+      - signal-cli
+    environment:
+      SIGNAL_HTTP_URL: "http://signal-cli:8080"
+
+  signal-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.signal-cli
+      args:
+        SIGNAL_CLI_VERSION: "0.13.20"
+    image: hermes-signal-cli:local
+    container_name: hermes-signal-cli
+    restart: unless-stopped
+    environment:
+      SIGNAL_CLI_ACCOUNT: "${SIGNAL_ACCOUNT}"
+    command: ["daemon", "--http", "0.0.0.0:8080"]
+    volumes:
+      - ./signal-data:/root/.local/share/signal-cli
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/check"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 256m
+    mem_reservation: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
