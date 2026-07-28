@@ -1,0 +1,166 @@
+name: Resolve upstream sync and validate slim
+
+on:
+  push:
+    branches:
+      - sync/upstream-main-20260726-171433
+    paths:
+      - .github/workflows/resolve-upstream-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  merge-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout sync branch
+        uses: actions/checkout@v4
+        with:
+          ref: sync/upstream-main-20260726-171433
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Merge my and resolve overlapping files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin my
+
+          if ! git merge --no-ff --no-commit origin/my; then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            printf 'Resolving conflicts:\n%s\n' "${conflicts[*]}"
+
+            for path in "${conflicts[@]}"; do
+              case "$path" in
+                tests/gateway/test_telegram_reply_mode.py)
+                  # Preserve the fork's Telegram-specific regression coverage.
+                  git checkout --theirs -- "$path"
+                  ;;
+                *)
+                  # Keep the latest upstream version for shared CI/docs/build files.
+                  if ! git checkout --ours -- "$path"; then
+                    git rm -f -- "$path"
+                  fi
+                  ;;
+              esac
+              git add -A -- "$path"
+            done
+          fi
+
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "Unresolved merge conflicts remain" >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+
+      - name: Keep slim image Telegram-only
+        shell: python
+        run: |
+          from pathlib import Path
+
+          dockerfile = Path("Dockerfile.slim")
+          text = dockerfile.read_text()
+          old = """# Extras included (kept minimal on purpose):
+          #   pty         — pseudo-terminal backend required by the terminal tool on Linux
+          #   mcp         — Model Context Protocol client support
+          #   messaging   — Telegram / Slack / Discord gateway support
+          #   google-api  — Google Workspace skill dependencies for Calendar / Docs / Sheets
+          #
+          # Extras deliberately OMITTED to stay lean:
+          #   Node.js / WhatsApp bridge, voice, tts-premium, modal, daytona, rl,
+          #   matrix, honcho, acp, mistral, dingtalk, feishu
+          """
+          new = """# Extras included (kept minimal on purpose):
+          #   pty       — pseudo-terminal backend required by the terminal tool on Linux
+          #   mcp       — Model Context Protocol client support
+          #   telegram  — Telegram gateway only (no Discord or Slack SDKs)
+          #   google    — Google Workspace skill dependencies for Calendar / Docs / Sheets
+          #
+          # Extras deliberately OMITTED to stay lean:
+          #   Web/desktop UI build toolchain, Node.js / WhatsApp bridge, Discord, Slack,
+          #   voice, tts-premium, modal, daytona, rl, matrix, honcho, acp, mistral,
+          #   dingtalk, feishu
+          """
+          if old in text:
+              text = text.replace(old, new)
+          text = text.replace("        --extra messaging \\\n", "        --extra telegram \\\n")
+          if "--extra telegram" not in text or "--extra messaging" in text:
+              raise SystemExit("failed to switch Dockerfile.slim to the telegram extra")
+          dockerfile.write_text(text)
+
+          pyproject = Path("pyproject.toml")
+          text = pyproject.read_text()
+          telegram_extra = (
+              'telegram = ["python-telegram-bot[webhooks]==22.6", '
+              '"aiohttp==3.14.1", "brotlicffi==1.2.0.1", "qrcode==7.4.2"]\n'
+          )
+          if "\ntelegram = [" not in text:
+              marker = "\nmessaging = ["
+              if marker not in text:
+                  raise SystemExit("messaging extra marker not found")
+              text = text.replace(marker, "\n" + telegram_extra + "messaging = [", 1)
+          pyproject.write_text(text)
+
+          ignore = Path("Dockerfile.slim.dockerignore")
+          text = ignore.read_text()
+          block = """
+
+          # Telegram-only channel footprint. Keep the shared gateway core, but omit
+          # plugin adapters and source trees for channels this image cannot run.
+          plugins/platforms/*
+          !plugins/platforms/telegram/
+          !plugins/platforms/telegram/**
+          """
+          if "plugins/platforms/*" not in text:
+              ignore.write_text(text.rstrip() + block)
+
+      - name: Refresh lockfile
+        run: uv lock
+
+      - name: Validate slim dependency policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q -- '--extra telegram' Dockerfile.slim
+          ! grep -q -- '--extra messaging' Dockerfile.slim
+          grep -q '^telegram = ' pyproject.toml
+          ! grep -Eq 'nodejs|npm|playwright|chromium' Dockerfile.slim
+
+      - name: Build slim image
+        run: docker build --pull -f Dockerfile.slim -t hermes-agent:slim-upstream-sync .
+
+      - name: Smoke test slim image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e HERMES_HOME=/tmp/hermes-test \
+            -e TERMINAL_ENV=local \
+            --entrypoint hermes \
+            hermes-agent:slim-upstream-sync \
+            --help
+
+          docker run --rm \
+            --entrypoint python \
+            hermes-agent:slim-upstream-sync \
+            -c 'import importlib.util; import telegram; import plugins.platforms.telegram.adapter; assert importlib.util.find_spec("discord") is None; assert importlib.util.find_spec("slack_bolt") is None'
+
+          bytes=$(docker image inspect hermes-agent:slim-upstream-sync --format='{{.Size}}')
+          mib=$((bytes / 1024 / 1024))
+          echo "Slim image size: ${mib} MiB" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit resolved merge and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/resolve-upstream-sync.yml
+          git add -A
+          git commit -m "Merge upstream/main while preserving Telegram slim image"
+          git push origin HEAD:sync/upstream-main-20260726-171433
